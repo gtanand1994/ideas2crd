@@ -16,7 +16,7 @@ class Controller(BaseHTTPRequestHandler):
         app_details['app_name']: str = parent['metadata']['name']
         app_details['env']: str = "prod"
         app_details['app_ns']: str = parent['metadata']['namespace']
-        app_details['mesh']: str = "prod-alpha"
+        app_details['mesh']: str = "prod"
         app_details['app_port']: str = parent['spec']['app']['port']
         app_details['app_health_check']: str = parent['spec']['app']['health_check']
         app_details['cpu_threshold']: int = parent['spec']['app']['threshold']['cpu']
