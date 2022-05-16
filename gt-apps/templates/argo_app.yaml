@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: $J_APP_NAME
+  namespace: argocd
+spec:
+  project: $J_PROJECT_NAME
+  source:
+    repoURL: <repo_url>
+    targetRevision: production
+    path: "application/$J_PROJECT_NAME/$J_APP_NAME"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: $J_PROJECT_NAME

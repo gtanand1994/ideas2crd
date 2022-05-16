@@ -1,0 +1,23 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: $J_APP_NAME-so
+  namespace: $J_PROJECT_NAME
+spec:
+  scaleTargetRef:
+    name: $J_APP_NAME
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+  pollingInterval: 5
+  cooldownPeriod:  10
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+  - type: cpu
+    metadata:
+      type: Utilization
+      value: "$J_CPU_PER"
+  - type: memory
+    metadata:
+      type: Utilization
+      value: "$J_MEM_PER"

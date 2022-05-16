@@ -1,0 +1,290 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  creationTimestamp: null
+  name: $J_APP_NAME
+  namespace: $J_PROJECT_NAME
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: $J_APP_NAME
+      env: $J_ENVIRONMENT
+      vertical: $J_PROJECT_NAME
+  strategy:
+    canary:
+      maxUnavailable: "10%"
+      abortScaleDownDelaySeconds: 30
+      canaryMetadata:
+        labels:
+          release: canary
+      canaryService: $J_APP_NAME-canary
+      stableMetadata:
+        labels:
+          release: stable
+      stableService: $J_APP_NAME-stable
+      steps:
+      - setCanaryScale:
+          replicas: 1
+      - pause: {}
+      - setWeight: 10
+      - pause: {}
+      - setWeight: 50
+      - pause: {}
+      - setWeight: 75
+      - pause: {}
+      trafficRouting:
+        istio:
+          virtualServices: []
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /stats/prometheus
+        prometheus.io/port: "15020"
+        prometheus.io/scheme: "http"
+        prometheus.io/scrape: "true"
+        sidecar.istio.io/status: '{"version":"e2cb9d4837cda9584fd272bfa1f348525bcaacfadb7e9b9efbd21a3bb44ad7a1","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-data","istio-podinfo","istio-token","istiod-ca-cert"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: $J_APP_NAME
+        env: $J_ENVIRONMENT
+        istio.io/rev: ""
+        security.istio.io/tlsMode: istio
+        service.istio.io/canonical-name: $J_APP_NAME
+        service.istio.io/canonical-revision: latest
+        topology.istio.io/network: $J_MESH
+        vertical: $J_PROJECT_NAME
+    spec:
+      nodeSelector:
+        intensity: memory
+        role: app
+      containers:
+      - env:
+        - name: APP_ENV
+          value: $J_ENVIRONMENT
+        - name: JAEGER_SERVICE_NAME
+          value: $J_APP_NAME
+        - name: JAEGER_ENDPOINT
+          value: http://jaeger-collector.svc.cluster.local:14268/api/traces
+        - name: JAEGER_PROPAGATION
+          value: b3
+        - name: JAEGER_REPORTER_LOG_SPANS
+          value: "true"
+        image: <AWS-ACCOUNT-ID>.dkr.ecr.ap-south-1.amazonaws.com/$J_PROJECT_NAME/$J_APP_NAME:$J_IMAGE_TAG
+        imagePullPolicy: Always
+        name: $J_APP_NAME
+        ports:
+        - containerPort: $J_APP_PORT
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /app-health/$J_APP_NAME/readyz
+            port: 15020
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 2
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        terminationMessagePolicy: FallbackToLogsOnError
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --serviceCluster
+        - $J_APP_NAME.$(POD_NAMESPACE)
+        - --proxyLogLevel=warning
+        - --proxyComponentLogLevel=misc:error
+        - --concurrency
+        - "2"
+        env:
+        - name: JWT_POLICY
+          value: third-party-jwt
+        - name: PILOT_CERT_PROVIDER
+          value: istiod
+        - name: CA_ADDR
+          value: istiod.istio-system.svc:15012
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.serviceAccountName
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: CANONICAL_SERVICE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['service.istio.io/canonical-name']
+        - name: CANONICAL_REVISION
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['service.istio.io/canonical-revision']
+        - name: PROXY_CONFIG
+          value: |
+            {"tracing":{"zipkin":{"address":"jaeger-collector:9411"}},"proxyMetadata":{"DNS_AGENT":""},"gatewayTopology":{"numTrustedProxies":3},"meshId":"J_MESH"}
+        - name: ISTIO_META_POD_PORTS
+          value: |-
+            [
+                {"containerPort":$J_APP_PORT,"protocol":"TCP"}
+            ]
+        - name: ISTIO_META_APP_CONTAINERS
+          value: $J_APP_NAME
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"prometheus.io/path":"/stats/prometheus","prometheus.io/port":"15020","prometheus.io/scheme":"http","prometheus.io/scrape":"true"}
+        - name: ISTIO_META_WORKLOAD_NAME
+          value: $J_APP_NAME
+        - name: ISTIO_META_OWNER
+          value: kubernetes://apis/apps/v1/namespaces/$J_PROJECT_NAME/deployments/$J_APP_NAME
+        - name: ISTIO_META_MESH_ID
+          value: $J_MESH
+        - name: TRUST_DOMAIN
+          value: cluster.local
+        - name: DNS_AGENT
+        - name: ISTIO_META_CLUSTER_ID
+          value: $J_MESH
+        - name: ISTIO_META_NETWORK
+          value: $J_MESH
+        - name: ISTIO_KUBE_APP_PROBERS
+          value: '{"/app-health/J_APP_NAME/readyz":{"httpGet":{"path":"$J_APP_HC","port":$J_APP_PORT,"scheme":"HTTP"},"timeoutSeconds":1}}'
+        - name: ISTIO_PROMETHEUS_ANNOTATIONS
+          value: '{"scrape":"true","path":"/metrics","port":"$J_APP_PORT"}'
+        image: <AWS-ACCOUNT-ID>.dkr.ecr.ap-south-1.amazonaws.com/<repo>/devops:istio-proxyv2-1.8.2
+        imagePullPolicy: Always
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          name: http-envoy-prom
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /healthz/ready
+            port: 15021
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500Mi
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsGroup: 1337
+          runAsNonRoot: true
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /var/run/secrets/istio
+          name: istiod-ca-cert
+        - mountPath: /var/lib/istio/data
+          name: istio-data
+        - mountPath: /etc/istio/proxy
+          name: istio-envoy
+        - mountPath: /var/run/secrets/tokens
+          name: istio-token
+        - mountPath: /etc/istio/pod
+          name: istio-podinfo
+      initContainers:
+      - args:
+        - istio-iptables
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - '*'
+        - -d
+        - 15090,15021,15020
+        env:
+        - name: DNS_AGENT
+        image: <AWS-ACCOUNT-ID>.dkr.ecr.ap-south-1.amazonaws.com/<repo>/devops:istio-proxyv2-1.8.2
+        imagePullPolicy: Always
+        name: istio-init
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500Mi
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: false
+          runAsGroup: 0
+          runAsNonRoot: false
+          runAsUser: 0
+      securityContext:
+        fsGroup: 1337
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - emptyDir: {}
+        name: istio-data
+      - downwardAPI:
+          items:
+          - fieldRef:
+              fieldPath: metadata.labels
+            path: labels
+          - fieldRef:
+              fieldPath: metadata.annotations
+            path: annotations
+        name: istio-podinfo
+      - name: istio-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: istio-ca
+              expirationSeconds: 43200
+              path: istio-token
+      - configMap:
+          name: istio-ca-root-cert
+        name: istiod-ca-cert
+status: {}

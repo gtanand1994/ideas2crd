@@ -1,0 +1,94 @@
+# kubectl create configmap -n metacontroller gt-app-controller --from-file=app
+# kubectl create configmap -n metacontroller gt-app-templates --from-file=templates
+---
+apiVersion: metacontroller.k8s.io/v1alpha1
+kind: CompositeController
+metadata:
+  name: gt-app-controller
+spec:
+  generateSelector: true
+  parentResource:
+    apiVersion: gtapp.com/v1
+    resource: gtapps
+    revisionHistory:
+      fieldPaths:
+      - spec.template
+  childResources:
+  - apiVersion: argoproj.io/v1alpha1
+    resource: rollouts
+    updateStrategy: #Optional, If no update strategy is specified, children of that type will never be updated if they already exist.
+      method: RollingInPlace # It can be one of OnDelete,Recreate,InPlace,RollingRecreate,RollingInPlace
+      statusChecks:
+        conditions:
+        - type: Ready
+          status: "True"
+  - apiVersion: keda.sh/v1alpha1
+    resource: scaledobjects
+    updateStrategy:
+      method: RollingInPlace
+  - apiVersion: argoproj.io/v1alpha1
+    resource: applications
+    updateStrategy:
+      method: RollingInPlace
+  - apiVersion: networking.istio.io/v1alpha3
+    resource: gateways
+    updateStrategy:
+      method: RollingInPlace
+  - apiVersion: v1
+    resource: services
+    updateStrategy:
+      method: RollingInPlace
+  - apiVersion: networking.istio.io/v1alpha3
+    resource: virtualservices
+    updateStrategy:
+      method: RollingInPlace
+  hooks:
+    sync:
+      webhook:
+        url: http://gt-app-controller.metacontroller/sync
+        timeout: 10s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gt-app-controller
+  namespace: metacontroller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gt-app-controller
+  template:
+    metadata:
+      labels:
+        app: gt-app-controller
+    spec:
+      containers:
+      - name: controller
+        image: <Your image created from Dockerfile>
+#        command: ["/bin/sh","-c","ls -lrth /hooks /templates /"]
+        command: ["python", "/hooks/sync.py"]
+        imagePullPolicy: Always
+        volumeMounts:
+        - name: app
+          mountPath: /hooks
+        - name: templates
+          mountPath: /templates
+      volumes:
+      - name: app
+        configMap:
+          name: gt-app-controller
+      - name: templates
+        configMap:
+          name: gt-app-templates
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gt-app-controller
+  namespace: metacontroller
+spec:
+  selector:
+    app: gt-app-controller
+  ports:
+  - port: 80

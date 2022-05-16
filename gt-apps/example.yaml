@@ -1,0 +1,18 @@
+apiVersion: gtapp.com/v1
+kind: GTApp
+metadata:
+  name: app-gt
+  namespace: metacontroller
+spec:
+  app: 
+    port: 8080
+    health_check: "/health"
+    image: "<Your image tag>"
+    threshold:
+      cpu: 75
+      mem: 75
+    endpoints:
+      prod:
+        - "gt.example.com"
+      canary:
+        - "gt-canary.example.com"

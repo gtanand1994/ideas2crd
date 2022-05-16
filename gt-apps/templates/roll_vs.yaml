@@ -1,0 +1,23 @@
+kind: VirtualService
+apiVersion: networking.istio.io/v1alpha3
+metadata:
+  name: $J_VS_NAME
+  namespace: $J_PROJECT_NAME
+spec:
+  hosts:
+    - $J_HOSTNAME
+  gateways:
+    - $J_APP_NAME-int-gateway
+  http:
+    - match: []
+      route:
+      - destination:
+          host: $J_APP_NAME-stable.$J_PROJECT_NAME.svc.cluster.local
+          port:
+            number: $J_APP_PORT
+        weight: 100
+      - destination:
+          host: $J_APP_NAME-canary.$J_PROJECT_NAME.svc.cluster.local
+          port:
+            number: $J_APP_PORT
+        weight: 0

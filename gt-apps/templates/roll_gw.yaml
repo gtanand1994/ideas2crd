@@ -1,0 +1,15 @@
+kind: Gateway
+apiVersion: networking.istio.io/v1alpha3
+metadata:
+  name: $J_GW_NAME
+  namespace: $J_PROJECT_NAME
+spec:
+  servers:
+    - hosts:
+        - $J_HOSTNAME
+      port:
+        name: http
+        number: 80
+        protocol: HTTP
+  selector:
+    istio: ingressgateway
